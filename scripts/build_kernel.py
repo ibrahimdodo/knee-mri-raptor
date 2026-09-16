@@ -3,7 +3,7 @@
 Kaggle script kernels are a single file, so the core module is pasted in front of the job's main
 and the job's `import raptor_core as rc` is pointed at the pasted copy. Usage:
 
-    python scripts/build_kernel.py gold_run
+    python scripts/build_kernel.py gold_run        # or gold_headers
     kaggle kernels push -p kaggle/gold_run/build
 """
 import json
@@ -18,6 +18,13 @@ JOBS = {
         "title": "Raptor Knee Gold Reproduction",
         "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense"],
         "competition_sources": ["rsna-knee-abnormality-detection"],
+    },
+    "gold_headers": {
+        "id": "ibrahimdodo/raptor-knee-gold-headers",
+        "title": "Raptor Knee Gold Headers",
+        "dataset_sources": [],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+        "gpu": False,
     },
 }
 
@@ -38,8 +45,8 @@ def build(job: str) -> Path:
     meta = {
         "id": spec["id"], "title": spec["title"], "code_file": code_file,
         "language": "python", "kernel_type": "script", "is_private": True,
-        "enable_gpu": True, "enable_tpu": False, "enable_internet": False,
-        "machine_shape": "NvidiaTeslaT4",
+        "enable_gpu": spec.get("gpu", True), "enable_tpu": False, "enable_internet": False,
+        **({"machine_shape": "NvidiaTeslaT4"} if spec.get("gpu", True) else {}),
         "dataset_sources": spec["dataset_sources"], "competition_sources": spec["competition_sources"],
         "kernel_sources": [], "model_sources": [],
     }

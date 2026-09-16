@@ -8,3 +8,5 @@ models/*.pt
 data/
 outputs/
 kaggle/*/build/
+# executed notebooks that display competition MRI slices
+notebooks/03_where_it_looks.ipynb

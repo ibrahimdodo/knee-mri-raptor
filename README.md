@@ -17,7 +17,7 @@ survives once its own model selection on those same 58 studies is accounted for.
 | 0 | Can the stored per-finding AUCs be reproduced exactly, and which preprocessing produces them? | Kaggle T4 (`kaggle/gold_run`) |
 | 1 | What is in the 58 labelled studies: prevalence, scanners, sequences, missing slots? | Mac |
 | 2 | How uncertain is 0.917? Bootstrap intervals per finding, and the optimism from selecting the epoch on the same set | Mac |
-| 3 | Where does the model look? Per-finding attention over the 62 windows and per-window contributions | Mac, from saved features |
+| 3 | Where does the model look? Per-finding attention over the 62 windows, medial/lateral anatomy, in-slice saliency | Mac + Kaggle (`kaggle/gold_headers`) |
 | 4 | What does it depend on? Window count, slot ablation (drop a plane), span and normalisation | Mac + Kaggle |
 | 5 | Error analysis: the worst false positives and negatives, viewed slice by slice | Mac |
 
@@ -61,6 +61,23 @@ per finding: a fingerprint much stricter than a matching macro-AUC.
   0.012 for either score alone. The smallest reliably detectable paired difference is about 0.012.
 - Choosing the best of the 14 scoring configurations on this set inflates the score by about +0.0035.
 
+### Phase 3: where does the model look? (done, `notebooks/03_where_it_looks.py`)
+
+The executed notebook shows MRI slices from the competition data and is not committed; run it locally.
+
+- Each study logit splits exactly into per-window contributions (attention x window logit, error 2e-6).
+- The fluid-sensitive sagittal series takes 37-61% of attention for 11 of 12 findings. Fluid findings (effusion,
+  synovitis, Baker's, contusion) give the non-fluid sagittal series 7-9%, while ACL and OA give it 23-28%. MCL and
+  contusion draw a third of their attention from coronal fluid-sensitive slices. The second coronal series is
+  nearly ignored (1.5-6%).
+- Attention narrows when a finding is present, for all 12 findings (lateral meniscus: 11 effective windows).
+- Medial and lateral meniscus attention sits at opposite ends of the sagittal stack in 58/58 studies. The medial
+  end derived from DICOM geometry and laterality (tag, series text or scanner position) matches the model in
+  57/58. The one mismatch is a study whose laterality tag contradicts its scanner position.
+- Occlusion saliency lands on the intercondylar notch (ACL), the menisci and the Baker's cyst neck. Grad-CAM on the
+  last stage is coarse, and on the last convolutional stage mostly noise. The model's final stages are
+  transformers, so gradient maps need an interventional cross-check.
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
@@ -78,6 +95,9 @@ per finding: a fingerprint much stricter than a matching macro-AUC.
 ```
 src/raptor_core.py        preprocessing, windows, model, metrics (single source of truth)
 kaggle/gold_run/main.py   Kaggle job: gold-set reproduction + feature export
+kaggle/gold_headers/      Kaggle job (CPU): slice geometry and laterality per series
+src/evaluation.py         bootstrap, DeLong, selection optimism
+src/explain.py            window decomposition, Grad-CAM, occlusion, laterality
 scripts/build_kernel.py   pastes raptor_core.py into a single-file Kaggle script
 tests/                    synthetic-DICOM tests of the preprocessing
 models/                   checkpoint (not committed)
