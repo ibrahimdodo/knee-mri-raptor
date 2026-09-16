@@ -10,3 +10,5 @@ kaggle>=1.7
 certifi
 pytest
 jupyter
+scipy
+jupytext

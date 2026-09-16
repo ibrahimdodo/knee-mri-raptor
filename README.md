@@ -44,6 +44,23 @@ per finding: a fingerprint much stricter than a matching macro-AUC.
   so the remaining gap is numerical.
 - Window count matters below 24: 0.843 at 8 windows, 0.890 at 12, 0.911 at 16.
 
+### Phase 2: how much is 0.917 worth? (done, [notebook](notebooks/02_uncertainty.ipynb))
+
+| | macro-AUC |
+|---|---|
+| Reproduced (A24) | 0.918 |
+| 95% bootstrap interval, 58 studies | 0.894 to 0.940 |
+| Epoch-selection optimism (best of 3 to 16 epochs, noise model) | -0.002 to -0.010 |
+| Plausible score on fresh studies like these | about 0.91, ± 0.02 |
+
+- Per-finding intervals are up to five times wider than the macro interval: Synovitis 0.67 to 0.91, PF OA 0.71 to 0.95.
+  DeLong and bootstrap standard errors agree to within 0.001 per finding.
+- The 6-94% span beats 2-98% in 95% of paired resamples (+0.005, CI -0.001 to +0.011): suggestive, not
+  conclusive. No finding differs significantly. The checkpoint loses nothing on slices it was not trained on.
+- Pairing matters: A62 and B62 correlate at 0.97 across resamples, so their difference has SD 0.003, against
+  0.012 for either score alone. The smallest reliably detectable paired difference is about 0.012.
+- Choosing the best of the 14 scoring configurations on this set inflates the score by about +0.0035.
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
