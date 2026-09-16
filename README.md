@@ -78,6 +78,21 @@ The executed notebook shows MRI slices from the competition data and is not comm
   last stage is coarse, and on the last convolutional stage mostly noise. The model's final stages are
   transformers, so gradient maps need an interventional cross-check.
 
+### Phase 4: what does the score depend on? (done, [notebook](notebooks/04_what_it_depends_on.ipynb))
+
+- The attention head is permutation-invariant, so the medial/lateral anatomy from Phase 3 comes from pixels, not
+  slice position.
+- Removing one series costs at most 0.018 macro-AUC (fluid-sensitive sagittal), then 0.011 (fluid-sensitive coronal).
+  The two non-fluid series together add nothing measurable (0.000).
+- Without fluid-sensitive series, effusion, fracture, contusion, MCL and Baker's cyst lose 0.15-0.21 AUC. MCL needs
+  coronal slices (-0.11 with sagittal only), and ACL needs sagittal (-0.16 with coronal only, 0.58 with axial only).
+- Attention share predicts logit movement (Spearman +0.91) but only moderately predicts AUC damage (-0.45):
+  influence is not necessity when series are redundant.
+- Studies lacking the second coronal series are mostly acute trauma, but the model does not exploit missing series
+  (at most 0.09 logit shift). The protection comes from low attention on blank windows, not from neutral blank logits.
+- Two random windows per study give 0.77, sixteen 0.90. Contrast shifts are harmless. Zoom 1.25x keeps AUC but moves
+  probabilities about 5 points. Zoom 1.5x costs 0.018, mostly MCL (-0.09).
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
@@ -98,6 +113,8 @@ kaggle/gold_run/main.py   Kaggle job: gold-set reproduction + feature export
 kaggle/gold_headers/      Kaggle job (CPU): slice geometry and laterality per series
 src/evaluation.py         bootstrap, DeLong, selection optimism
 src/explain.py            window decomposition, Grad-CAM, occlusion, laterality
+src/ablation.py           series removal (drop / blank), zoom and contrast perturbations
+scripts/robustness_features.py   re-encode all windows under perturbations (MPS)
 scripts/build_kernel.py   pastes raptor_core.py into a single-file Kaggle script
 tests/                    synthetic-DICOM tests of the preprocessing
 models/                   checkpoint (not committed)
