@@ -193,6 +193,8 @@ siblings
 #   compartment by 0.07-0.10, so compartment-specific evidence exists. It is diluted by a shared "degenerative knee"
 #   component.
 #
+# Section 6 checks the training labels and finds where each of these comes from.
+#
 # There is a clinical reason the synovitis result is unsurprising. Without intravenous contrast, synovial thickening
 # and joint fluid look alike on MRI, and scoring systems for non-contrast knee MRI grade them together as
 # "effusion-synovitis". Training labels read from reports would inherit whatever each radiologist chose to call it.
@@ -364,18 +366,137 @@ plt.show()
 # ranks anyway. For anyone reading the outputs as probabilities of disease, it matters a great deal.
 
 # %% [markdown]
-# ## 6. Summary
+# ## 6. Checking the explanations against the training labels
+#
+# Sections 3 and 5 blamed three things on how the model was trained: synovitis tracking effusion, logits squeezed
+# towards zero, and probabilities shifted up by positive weighting. The author published the language-model soft
+# labels the checkpoint was trained on (`dreaddevelopment/rsna-knee-labels`, CC0), one row per non-gold study, so
+# each explanation can be tested directly. Download the CSV to `data/soft_labels/` to run this section.
+
+# %%
+soft_path = ROOT / "data/soft_labels/labels_llm_soft.csv"
+soft = pd.read_csv(soft_path)
+S = soft[rc.LAB].values
+print(f"{len(soft)} training studies with soft labels; overlap with the 58 gold studies: "
+      f"{len(set(soft.StudyInstanceUID.astype(str)) & set(gold.StudyInstanceUID.astype(str)))}")
+levels = pd.Series(S.round(2).ravel()).value_counts().sort_index()
+levels.to_frame("count").T
+
+# %% [markdown]
+# ### 6a. Why the logits are squeezed
+#
+# The targets take 14 values, never below 0.05 and never above 0.95. A model trained to hit 0.95 learns to stop at a
+# logit of $\log(0.95/0.05) \approx 2.9$. On gold labels that really are 0 or 1 its logits then need stretching, which is
+# the slope of 1.77 found in Section 5.
+
+# %% [markdown]
+# ### 6b. Inherited or learned?
+
+# %%
+def pair_corr(M, a, b):
+    return np.corrcoef(M[:, ix(a)], M[:, ix(b)])[0, 1]
+
+
+inherit = pd.DataFrame([{"pair": f"{a} / {b}",
+                         "training soft labels": pair_corr(S, a, b),
+                         "gold labels": pair_corr(Y, a, b),
+                         "model scores": pair_corr(logits, a, b)}
+                        for a, b in [("Effusion", "Synovitis"), ("Medial OA", "Lateral OA"),
+                                     ("Lateral OA", "PF OA"), ("Medial OA", "PF OA")]]).set_index("pair")
+inherit
+
+# %%
+eff_level = pd.cut(S[:, ix("Effusion")], [0, 0.3, 1.0], labels=["effusion low (0.05-0.2)", "effusion high (0.76-0.95)"])
+syn_level = pd.cut(S[:, ix("Synovitis")], [0, 0.1, 0.3, 0.6, 1.0],
+                   labels=["0.05-0.1", "0.15-0.2", "0.35-0.45 (unsure)", "0.76-0.95"])
+pd.crosstab(eff_level, syn_level, rownames=["training label"], colnames=["synovitis soft label"])
+
+# %% [markdown]
+# - **The synovitis entanglement was in the labels.** In the training labels effusion and synovitis correlate at 0.88,
+#   against 0.40 in the radiologists' gold labels. When a report gave little sign of effusion, the language model almost
+#   always put synovitis at 0.35-0.45, "unsure". When effusion was high, synovitis was high too. The model learned
+#   exactly that, and its 0.98 is the labels' 0.88 made sharper.
+# - **The OA entanglement was not.** The three compartments' training labels correlate at 0.36-0.42, close to the gold
+#   labels, yet the model's scores correlate at about 0.8. That merging is the model's own, most likely because a
+#   degenerative knee looks degenerative in every compartment at once.
+
+# %% [markdown]
+# ### 6c. The positive weights, recomputed
+#
+# The training script sets `prev = clip(mean soft label, 0.03, 0.7)` and `pos_weight = clip((1 - prev) / prev, 1, 10)`
+# over the training studies. Recompute those weights from the soft labels, subtract $\log w$ from each logit, and see
+# how far that goes towards calibration without looking at a single gold label.
+
+# %%
+train_prev = np.clip(S.mean(0), 0.03, 0.7)
+pos_weight = np.clip((1 - train_prev) / train_prev, 1, 10)
+label_free = ab.sigmoid(logits - np.log(pos_weight))
+
+corrected = logits - np.log(pos_weight)
+slope_loo = np.zeros_like(probs)
+for i in range(N):
+    keep = np.arange(N) != i
+    s_i = minimize(lambda x: nll_of(ab.sigmoid(x[0] * corrected[keep]), Y[keep]), [1.0]).x[0]
+    slope_loo[i] = ab.sigmoid(s_i * corrected[i])
+slope_all = minimize(lambda x: nll_of(ab.sigmoid(x[0] * corrected), Y), [1.0]).x[0]
+
+rows = {"as trained": probs,
+        "minus log(pos_weight), no gold labels used": label_free,
+        "then one shared slope (leave-one-out)": slope_loo,
+        "offset per finding + shared slope, fitted on gold (Section 5)": versions["offset per finding + shared slope"]}
+pd.DataFrame({name: {"Brier": ((P - Y) ** 2).mean(), "log loss": nll_of(P, Y), "ECE": ece(P.ravel(), Y.ravel()),
+                     "macro-AUC": rc.macro_auc(Y, P)[0], "parameters fitted on gold": n}
+              for (name, P), n in zip(rows.items(), [0, 0, 1, 13])}).T
+
+# %%
+from scipy.stats import pearsonr
+
+weights = pd.DataFrame({"training prevalence": S.mean(0), "gold prevalence": Y.mean(0), "pos_weight": pos_weight,
+                        "-log pos_weight": -np.log(pos_weight), "offset fitted on gold": shifts}, index=rc.LAB)
+r, p = pearsonr(weights["-log pos_weight"], weights["offset fitted on gold"])
+print(f"shared slope after the weight correction: {slope_all:.2f}")
+print(f"offset fitted on gold vs -log(pos_weight): Pearson r = {r:.2f} (p = {p:.3f})")
+
+fig, ax = plt.subplots(figsize=(5.6, 4.6))
+ax.plot([-2.5, 0], [-2.5, 0], color=ps.MUTED, lw=1)
+ax.scatter(weights["-log pos_weight"], weights["offset fitted on gold"], s=56, color=ps.BLUE, edgecolor=ps.SURFACE,
+           linewidth=2, zorder=3)
+for f, dx, dy in [("Fracture", 8, -2), ("Lateral OA", 8, -4), ("MCL", 8, -2), ("Effusion", -50, -3), ("Synovitis", -62, -2)]:
+    ax.annotate(f, (weights.loc[f, "-log pos_weight"], weights.loc[f, "offset fitted on gold"]), xytext=(dx, dy),
+                textcoords="offset points", fontsize=8.5, color=ps.INK_2)
+ax.set_xlabel("offset predicted from training labels: -log(pos_weight)")
+ax.set_ylabel("offset fitted on the 58 gold studies")
+ax.set_xlim(-2.5, 0); ax.set_ylim(-2.5, 0)
+ax.set_title(f"Positive weighting explains the shift (r = {r:.2f})")
+fig.savefig(FIG / "phase5_pos_weight.png")
+plt.show()
+weights.round(2)
+
+# %% [markdown]
+# - **Subtracting log(pos_weight) alone does most of the repair.** ECE falls from 0.20 to 0.06 and Brier score from
+#   0.164 to 0.114, as good as the per-finding offsets fitted on the gold studies, without using any of them.
+# - **One shared slope then finishes the job** (1.44 after the weight correction), with ECE 0.04. Because it is a single
+#   parameter the leave-one-out jitter is tiny, and macro-AUC stays at 0.916.
+# - **The offsets fitted on gold follow -log(pos_weight)** with r = 0.76. The largest departure is fracture: the gold set
+#   has 31% fractures against 11% in training, and a set enriched for a finding needs a smaller downward shift for it.
+#
+# So the calibration problem is fully accounted for by two lines of the training script (the positive weights and the
+# soft targets), and the first of the two fixes needs no labelled data at all.
+
+# %% [markdown]
+# ## 7. Summary
 #
 # | Question | Answer |
 # |---|---|
 # | Are errors spread or concentrated? | Concentrated: 25% of wrong pairs from 17 of 696 study-finding cells |
 # | Which studies are hard? | Nothing about site, scanner, field strength or preprocessing predicts it; multi-injury knees slightly (p = 0.05) |
-# | Which findings are confused? | Synovitis scores track effusion (score correlation 0.98, labels 0.40); OA compartments partly merged |
+# | Which findings are confused? | Synovitis tracks effusion (scores 0.98, gold labels 0.40), inherited from training labels (0.88); OA compartments partly merged by the model itself |
 # | What are the worst 14 errors? | 1 clear miss, 4 label/report conflicts (model agrees with the report), 4 focal cartilage lesions labelled OA, 3 effusion scored as synovitis, 2 borderline |
-# | Are probabilities calibrated? | No: shifted up by positive weighting and compressed by soft labels. An offset per finding plus one shared slope cuts calibration error from 0.20 to 0.03 |
+# | Are probabilities calibrated? | No: shifted up by positive weighting and compressed by soft targets (0.05-0.95). Subtracting log(pos_weight) from the training labels alone cuts calibration error from 0.20 to 0.06; adding one shared slope, to 0.04 |
 #
 # Across Phases 2-5 the model looks better than its weakest numbers suggest. Its synovitis and PF OA scores are low
 # partly because those labels mix different things (fluid with synovium, focal injury with degeneration), and several of
 # its worst "errors" conflict with the report rather than with the image. The limits it does have are specific and
-# explainable: an effusion detector standing in for synovitis, an OA detector that expects diffuse degeneration, and
-# probabilities that need recalibrating before anyone reads them as risks.
+# explainable: an effusion detector standing in for synovitis (because its training labels were one), an OA detector
+# that expects diffuse degeneration, and probabilities inflated by the loss weighting that a single subtraction
+# largely repairs.

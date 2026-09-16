@@ -108,6 +108,11 @@ The executed notebook shows MRI slices from the competition data and is not comm
   scored as synovitis, 2 borderline synovitis.
 - Probabilities are shifted up by positive weighting and compressed by soft labels. An offset per finding plus one
   shared slope (1.77), fitted leave-one-out, cuts calibration error from 0.20 to 0.03.
+- Checked against the author's training soft labels (`dreaddevelopment/rsna-knee-labels`, 4,349 non-gold studies):
+  targets span 0.05-0.95 in 14 levels (hence the compressed logits); effusion and synovitis labels correlate at 0.88,
+  so the synovitis entanglement was inherited, while the OA compartments' labels correlate at only 0.36-0.42, so that
+  merging is the model's own. Subtracting log(pos_weight), recomputed from those labels with the training script's
+  formula, cuts calibration error from 0.20 to 0.06 without any gold labels; one shared slope takes it to 0.04.
 
 ## How the model sees a study
 
@@ -146,7 +151,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pytest -q tests
 ```
 
-Competition data requires accepting the competition rules on Kaggle first.
+Competition data requires accepting the competition rules on Kaggle first. The Phase 5 soft-label check needs
+`.venv/bin/kaggle datasets download dreaddevelopment/rsna-knee-labels -f labels_llm_soft.csv -p data/soft_labels`.
 
 ```bash
 .venv/bin/python scripts/build_kernel.py gold_run
