@@ -1,0 +1,12 @@
+torch>=2.4
+timm>=1.0
+pydicom>=2.4
+opencv-python-headless
+numpy
+pandas
+scikit-learn
+matplotlib
+kaggle>=1.7
+certifi
+pytest
+jupyter

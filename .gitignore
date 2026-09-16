@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+# large or licence-restricted: checkpoint (re-download from Kaggle), competition data and its derivatives
+models/*.pt
+data/
+outputs/
+kaggle/*/build/
