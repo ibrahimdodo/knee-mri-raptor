@@ -93,6 +93,22 @@ The executed notebook shows MRI slices from the competition data and is not comm
 - Two random windows per study give 0.77, sixteen 0.90. Contrast shifts are harmless. Zoom 1.25x keeps AUC but moves
   probabilities about 5 points. Zoom 1.5x costs 0.018, mostly MCL (-0.09).
 
+### Phase 5: where and why it is wrong (done, [notebook](notebooks/05_errors.ipynb))
+
+- Errors are concentrated: 25% of the 726 wrong pairs come from 17 of 696 study-finding cells.
+- Nothing about site (report language), vendor, field strength, empty slots or magnified series predicts which studies
+  are hard. Knees with more positive findings are slightly harder (Spearman +0.26, p = 0.05).
+- Reports are in nine languages across the training set (English 1,736, Spanish 708, Turkish 546, Croatian 407,
+  Greek 321, German 262, Bulgarian 220, Dutch 147, French 59); the 58 labelled studies cover eight.
+- Synovitis scores track effusion (score correlation 0.98 against label correlation 0.40). Ranking synovitis by the
+  effusion score gives the same AUC (0.800 vs 0.805). The OA compartments are partly merged (score correlations about
+  0.8) but each own score still beats its best sibling by 0.07-0.10.
+- The 14 worst errors, read in their original languages: 1 clear miss (undisplaced eminence fracture), 4 where label
+  and report disagree (the model sides with the report each time), 4 focal cartilage lesions labelled OA, 3 effusion
+  scored as synovitis, 2 borderline synovitis.
+- Probabilities are shifted up by positive weighting and compressed by soft labels. An offset per finding plus one
+  shared slope (1.77), fitted leave-one-out, cuts calibration error from 0.20 to 0.03.
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
@@ -114,6 +130,7 @@ kaggle/gold_headers/      Kaggle job (CPU): slice geometry and laterality per se
 src/evaluation.py         bootstrap, DeLong, selection optimism
 src/explain.py            window decomposition, Grad-CAM, occlusion, laterality
 src/ablation.py           series removal (drop / blank), zoom and contrast perturbations
+src/reports.py            report language detection
 scripts/robustness_features.py   re-encode all windows under perturbations (MPS)
 scripts/build_kernel.py   pastes raptor_core.py into a single-file Kaggle script
 tests/                    synthetic-DICOM tests of the preprocessing

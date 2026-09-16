@@ -280,7 +280,7 @@ plt.show()
 # %% [markdown]
 # The medial meniscus peaks at the medial edge, the lateral meniscus at the lateral edge, and the ACL in the
 # centre of the knee, which is where the cruciates cross in the intercondylar notch. Nobody told the model any of
-# this: its only supervision was twelve per-study numbers read out of Spanish reports.
+# this: its only supervision was twelve per-study numbers read out of free-text reports in nine languages.
 
 # %% [markdown]
 # ## 6. Within a slice
