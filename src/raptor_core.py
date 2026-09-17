@@ -12,6 +12,7 @@ notebook is built by pasting it in front of a small main script.
 from __future__ import annotations
 
 import glob
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -21,6 +22,8 @@ import torch.nn.functional as F
 
 LAB = ["ACL", "MCL", "Medial Meniscus", "Lateral Meniscus", "Medial OA", "Lateral OA",
        "PF OA", "Effusion", "Synovitis", "Baker's", "Contusion", "Fracture"]
+
+THREADS = 8          # parallel DICOM reads; results are ordered deterministically regardless
 
 IMAGENET_MEAN = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
 IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
@@ -64,8 +67,7 @@ def order_series(series_dir: str):
     """
     import pydicom
 
-    recs, ps_list = [], []
-    for f in glob.glob(series_dir + "/*.dcm"):
+    def header(f):
         try:
             h = pydicom.dcmread(f, stop_before_pixels=True)
             iop = getattr(h, "ImageOrientationPatient", None)
@@ -76,14 +78,19 @@ def order_series(series_dir: str):
             else:
                 pos = float(getattr(h, "InstanceNumber", 0) or 0)
             ps = getattr(h, "PixelSpacing", None)
-            ps = float(ps[0]) if ps is not None else 0.5
-            ps_list.append(ps)
-            recs.append((pos, f, ps))
+            return pos, f, (float(ps[0]) if ps is not None else 0.5), True
         except Exception:
-            recs.append((0.0, f, 0.5))
+            return 0.0, f, 0.5, False
+
+    files = glob.glob(series_dir + "/*.dcm")
+    # Reading headers is disk-bound, and a series can hold hundreds of files. Threads keep the order
+    # deterministic (results stay in `files` order before the stable sort below).
+    with ThreadPoolExecutor(max_workers=THREADS) as pool:
+        recs = list(pool.map(header, files))
+    ps_list = [ps for _, _, ps, ok in recs if ok]
     recs.sort(key=lambda x: x[0])
     med_ps = float(np.median(ps_list)) if ps_list else 0.5
-    return [(f, ps) for _, f, ps in recs], med_ps
+    return [(f, ps) for _, f, ps, _ in recs], med_ps
 
 
 def read_pixels(path: str) -> np.ndarray:
@@ -165,13 +172,19 @@ def build_study(study_dir: str, series_rows: list[dict], geom: Geometry = NATIVE
         hi = max(hi, lo)
         picks = np.linspace(lo, hi, k).round().astype(int) if n > 1 else np.zeros(k, int)
         info["picks"] = [int(p) for p in picks]
-        arrs, pss = [], []
-        for p in picks:
-            fp, ps = files[min(p, n - 1)]
+        picked = [files[min(p, n - 1)] for p in picks]
+
+        def load(fp_ps):
+            fp, ps = fp_ps
             try:
-                arrs.append(read_pixels(fp)); pss.append(ps)
+                return read_pixels(fp), ps
             except Exception:
-                arrs.append(None); pss.append(med_ps)
+                return None, med_ps
+
+        with ThreadPoolExecutor(max_workers=THREADS) as pool:
+            loaded = list(pool.map(load, picked))
+        arrs = [a for a, _ in loaded]
+        pss = [ps for _, ps in loaded]
         valid = [a for a in arrs if a is not None]
         if valid:
             loq, hiq = np.percentile(np.concatenate([a.ravel() for a in valid]), [2.0, 98.0])

@@ -7,6 +7,7 @@ and the job's `import raptor_core as rc` is pointed at the pasted copy. Usage:
     kaggle kernels push -p kaggle/gold_run/build
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -26,16 +27,27 @@ JOBS = {
         "competition_sources": ["rsna-knee-abnormality-detection"],
         "gpu": False,
     },
+    "submit": {
+        "id": "ibrahimdodo/raptor-knee-submission",
+        "title": "Raptor Knee Submission",
+        "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense"],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+    },
 }
 
 
-def build(job: str) -> Path:
+def build(job: str, overrides: dict | None = None) -> Path:
     spec = JOBS[job]
     core = (ROOT / "src" / "raptor_core.py").read_text()
     main = (ROOT / "kaggle" / job / "main.py").read_text()
     marker = "import raptor_core as rc  # replaced by the build script"
     assert marker in main, f"{job}/main.py must import the core with the marker line"
     main = main.replace(marker, "rc = sys.modules[__name__]")
+    for key, value in (overrides or {}).items():
+        # rewrite a top-level constant: the Kaggle notebook cannot read environment variables
+        pattern = re.compile(rf"^{key} = .*$", re.M)
+        assert pattern.search(main), f"{key} is not a top-level constant of {job}/main.py"
+        main = pattern.sub(f"{key} = {value!r}", main, count=1)
 
     out = ROOT / "kaggle" / job / "build"
     out.mkdir(exist_ok=True)
@@ -55,4 +67,9 @@ def build(job: str) -> Path:
 
 
 if __name__ == "__main__":
-    print(build(sys.argv[1] if len(sys.argv) > 1 else "gold_run"))
+    args = sys.argv[1:] or ["gold_run"]
+    over = {}
+    for a in args[1:]:                       # e.g. SOURCE=train LIMIT=200
+        k, v = a.split("=", 1)
+        over[k] = int(v) if v.lstrip("-").isdigit() else v
+    print(build(args[0], over))
