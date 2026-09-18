@@ -6,6 +6,8 @@ Same pipeline as the Phase 0 reproduction, pointed at the test set. VARIANT pick
   A24    the configuration that produced the stored 0.917 (24 windows)
   AB62   the mean of the 2-98% and 6-94% spans at 62 windows (two passes, so about twice the time)
 
+HEADS swaps the checkpoint's attention head for an average of retrained heads (Phase 6) from an attached dataset.
+
 The metric is ROC-AUC, so only the ranking of each column matters; probabilities are written as they are.
 No study is ever dropped: a study that fails preprocessing or inference gets 0.5 everywhere, which is what
 the sample submission holds.
@@ -24,6 +26,7 @@ import raptor_core as rc  # replaced by the build script
 VARIANT = os.environ.get("RAPTOR_VARIANT", "A62")     # the notebook runs with the defaults; env vars are for local tests
 SOURCE = os.environ.get("RAPTOR_SOURCE", "test")      # "train" measures throughput on studies we already know
 LIMIT = int(os.environ.get("RAPTOR_LIMIT", "0"))      # 0 = every study
+HEADS = os.environ.get("RAPTOR_HEADS", "")            # "" = the checkpoint's own head; else a retrained-head prefix
 INPUT = os.environ.get("RAPTOR_INPUT", "/kaggle/input")
 OUT = os.environ.get("RAPTOR_OUT", "/kaggle/working")
 CHUNK = 16
@@ -57,9 +60,31 @@ def find_checkpoint(name="raptor_ft_coatnet_v10_full.pt"):
     raise SystemExit(f"{name} not attached")
 
 
+def load_heads(prefix, dev):
+    """Retrained attention heads (Phase 6) from an attached dataset: files <prefix>_seed<k>.pt.
+
+    They have exactly the checkpoint head's parameter names, so each loads into a RaptorClassifier whose
+    backbone is an identity; at inference their logits are averaged.
+    """
+    import glob
+    paths = []
+    for d, dirs, fs in os.walk(INPUT):
+        dirs[:] = [x for x in dirs if "competition" not in x and x != "rsna-knee-abnormality-detection"]
+        paths += glob.glob(os.path.join(d, f"{prefix}_seed*.pt"))
+    if not paths:
+        raise SystemExit(f"no heads named {prefix}_seed*.pt attached")
+    heads = []
+    for p in sorted(paths):
+        h = rc.RaptorClassifier(torch.nn.Identity(), F_dim=1024)
+        h.load_state_dict(torch.load(p, map_location="cpu"), strict=True)
+        heads.append(h.eval().to(dev))
+    log(f"loaded {len(heads)} retrained heads: {[os.path.basename(p) for p in sorted(paths)]}")
+    return heads
+
+
 @torch.no_grad()
-def score_study(model, vol, mask, k, dev):
-    """Logits [12] for one study, in half precision on GPU, falling back to full precision."""
+def encode_study(model, vol, mask, k, dev):
+    """Backbone features [k, 1024] for one study, in half precision on GPU, falling back to full precision."""
     x = rc.make_windows(vol, rc.eval_centers(mask, k), res=vol.shape[-1])
     feats = []
     for i in range(0, len(x), CHUNK):
@@ -72,7 +97,7 @@ def score_study(model, vol, mask, k, dev):
             if dev == "cuda":
                 torch.cuda.empty_cache()
             feats.append(model.backbone(xb.float()).float().cpu())
-    return model.head(torch.cat(feats)[None].to(dev))[0].float().cpu().numpy()
+    return torch.cat(feats)
 
 
 def main():
@@ -94,6 +119,7 @@ def main():
 
     model, ck = rc.load_checkpoint(find_checkpoint(), dev)
     assert ck["lab"] == rc.LAB, "checkpoint label order differs from raptor_core.LAB"
+    heads = load_heads(HEADS, dev) if HEADS else [model]
 
     logits = np.zeros((len(ids), len(rc.LAB)), np.float32)
     empty_slices = np.zeros(len(ids), int)
@@ -108,7 +134,9 @@ def main():
                     # Without this the model would happily score a stack of black images.
                     raise ValueError("no usable slices")
                 empty_slices[i] = int((mask == 0).sum())
-                passes.append(score_study(model, vol, mask, k, dev))
+                f = encode_study(model, vol, mask, k, dev)[None].to(dev)
+                with torch.no_grad():
+                    passes.append(np.mean([h.head(f)[0].float().cpu().numpy() for h in heads], axis=0))
                 del vol, mask
             logits[i] = np.mean(passes, axis=0)
         except Exception as e:

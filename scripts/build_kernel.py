@@ -40,6 +40,13 @@ JOBS = {
         "competition_sources": ["rsna-knee-abnormality-detection"],
         "main": "train_feats",
     },
+    "submit_r3": {
+        "id": "ibrahimdodo/raptor-knee-submission-r3",
+        "title": "Raptor Knee Submission R3",
+        "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense", "ibrahimdodo/raptor-knee-heads"],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+        "main": "submit",
+    },
     "submit": {
         "id": "ibrahimdodo/raptor-knee-submission",
         "title": "Raptor Knee Submission",
