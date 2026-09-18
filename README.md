@@ -114,6 +114,12 @@ The executed notebook shows MRI slices from the competition data and is not comm
   merging is the model's own. Subtracting log(pos_weight), recomputed from those labels with the training script's
   formula, cuts calibration error from 0.20 to 0.06 without any gold labels; one shared slope takes it to 0.04.
 
+### Leaderboard check (2026-09-17)
+
+Submitted through `kaggle/submit` (2-98% span, 62 windows): **public leaderboard 0.927**, against 0.918 on the 58
+labelled studies and a 95% interval of 0.894-0.940. The gold-set estimate held up. For scale, 0.927 sits around rank
+1,595 of 3,917 teams; 855 teams are at 0.94 or better. Throughput on a T4 was 2.3 s per study.
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
