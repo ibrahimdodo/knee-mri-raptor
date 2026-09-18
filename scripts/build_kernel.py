@@ -27,6 +27,19 @@ JOBS = {
         "competition_sources": ["rsna-knee-abnormality-detection"],
         "gpu": False,
     },
+    "train_feats": {
+        "id": "ibrahimdodo/raptor-knee-train-features",
+        "title": "Raptor Knee Train Features",
+        "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense"],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+    },
+    "train_feats_b": {
+        "id": "ibrahimdodo/raptor-knee-train-features-b",
+        "title": "Raptor Knee Train Features B",
+        "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense"],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+        "main": "train_feats",
+    },
     "submit": {
         "id": "ibrahimdodo/raptor-knee-submission",
         "title": "Raptor Knee Submission",
@@ -39,7 +52,7 @@ JOBS = {
 def build(job: str, overrides: dict | None = None) -> Path:
     spec = JOBS[job]
     core = (ROOT / "src" / "raptor_core.py").read_text()
-    main = (ROOT / "kaggle" / job / "main.py").read_text()
+    main = (ROOT / "kaggle" / spec.get("main", job) / "main.py").read_text()
     marker = "import raptor_core as rc  # replaced by the build script"
     assert marker in main, f"{job}/main.py must import the core with the marker line"
     main = main.replace(marker, "rc = sys.modules[__name__]")
@@ -50,6 +63,7 @@ def build(job: str, overrides: dict | None = None) -> Path:
         main = pattern.sub(f"{key} = {value!r}", main, count=1)
 
     out = ROOT / "kaggle" / job / "build"
+    out.parent.mkdir(exist_ok=True)
     out.mkdir(exist_ok=True)
     code_file = spec["id"].split("/")[1] + ".py"
     (out / code_file).write_text(core + "\n\n# " + "=" * 76 + "\n# JOB: " + job + "\n# " + "=" * 76

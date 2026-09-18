@@ -120,6 +120,19 @@ Submitted through `kaggle/submit` (2-98% span, 62 windows): **public leaderboard
 labelled studies and a 95% interval of 0.894-0.940. The gold-set estimate held up. For scale, 0.927 sits around rank
 1,595 of 3,917 teams; 855 teams are at 0.94 or better. Throughput on a T4 was 2.3 s per study.
 
+### Phase 6: retraining the head (done, [notebook](notebooks/06_retrain_head.ipynb))
+
+Backbone features for all 4,407 studies were computed once on Kaggle (`kaggle/train_feats`, two T4 shards, no
+failures); the 280 k-parameter attention head was then retrained locally in about 11 s per run, 6 recipes x 3 seeds,
+selected on 652 held-out training studies and never on the 58 gold studies.
+
+- Dropping the positive weighting fixes calibration at training time: ECE 0.19 to 0.05.
+- Masking the "unsure" soft labels (0.3-0.5) untangles synovitis from effusion: their score correlation over 4,407
+  studies falls from 0.97 to 0.77, below the training labels' own 0.88.
+- In the 2 x 2 design the two choices do not interact: each moves only its own effect.
+- No recipe beats the checkpoint's head on gold macro-AUC; all land about 0.01 lower (0.900-0.907), consistent
+  with the checkpoint having been selected on those studies. The gold set cannot resolve it; the leaderboard can.
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
@@ -142,6 +155,9 @@ src/evaluation.py         bootstrap, DeLong, selection optimism
 src/explain.py            window decomposition, Grad-CAM, occlusion, laterality
 src/ablation.py           series removal (drop / blank), zoom and contrast perturbations
 src/reports.py            report language detection
+src/head_training.py      attention head on frozen features: recipes, masked loss, training
+kaggle/train_feats/       Kaggle job: backbone features for all 4,407 training studies (two shards)
+scripts/train_heads.py    phase 6 recipes x seeds
 scripts/robustness_features.py   re-encode all windows under perturbations (MPS)
 scripts/build_kernel.py   pastes raptor_core.py into a single-file Kaggle script
 tests/                    synthetic-DICOM tests of the preprocessing
