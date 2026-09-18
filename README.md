@@ -132,6 +132,10 @@ selected on 652 held-out training studies and never on the 58 gold studies.
 - In the 2 x 2 design the two choices do not interact: each moves only its own effect.
 - No recipe beats the checkpoint's head on gold macro-AUC; all land about 0.01 lower (0.900-0.907), consistent
   with the checkpoint having been selected on those studies. The gold set cannot resolve it; the leaderboard can.
+- **Leaderboard check (2026-09-18):** the R3 heads (3-seed mean, via the private dataset `ibrahimdodo/raptor-knee-heads`)
+  scored **0.920** against the checkpoint's 0.927. The gold gap (-0.013) roughly halves on unseen data (-0.007): about
+  half was selection optimism, the rest looks like the cost of a fresh head on features co-trained with another. For
+  ranking, keep the checkpoint's head; for calibrated, untangled probabilities, R3 costs about 0.007 AUC.
 
 ## How the model sees a study
 
