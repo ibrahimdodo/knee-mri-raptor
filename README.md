@@ -137,6 +137,18 @@ selected on 652 held-out training studies and never on the 58 gold studies.
   half was selection optimism, the rest looks like the cost of a fresh head on features co-trained with another. For
   ranking, keep the checkpoint's head; for calibrated, untangled probabilities, R3 costs about 0.007 AUC.
 
+### Phase 7: combining similar models (done, [notebook](notebooks/07_ensemble.ipynb))
+
+The author's three public CoAtNet checkpoints (v5, v10 = ours, v8), each on its own slice layout, plus the public
+ensemble's channel-flipped view. All three reproduce their stored AUCs to within 2-6 ranked pairs at 24 windows.
+
+- The flipped view correlates 0.993 with its unflipped model and adds nothing.
+- Different checkpoints correlate 0.94-0.96 and averaging pairs gains 0.3-0.9 points, more the more they disagree.
+- The pre-registered four-arm ensemble (public weights 0.6/0.1/0.1/0.2) scores 0.926 on gold (+0.009 vs v10, paired CI
+  -0.001 to +0.019) and **0.932 on the public leaderboard** (+0.005; about rank 1,575 of 4,008). About half the gold
+  gain survives; the rest was selection, since v5 and v8 were built from gold-selected epochs.
+- Same-family averaging explains about a third of the public stack's lead (+0.005 of 0.927 -> 0.941).
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
@@ -161,6 +173,7 @@ src/ablation.py           series removal (drop / blank), zoom and contrast pertu
 src/reports.py            report language detection
 src/head_training.py      attention head on frozen features: recipes, masked loss, training
 kaggle/train_feats/       Kaggle job: backbone features for all 4,407 training studies (two shards)
+kaggle/arms_gold/         Kaggle job: all three public CoAtNet checkpoints on the 58 gold studies
 scripts/train_heads.py    phase 6 recipes x seeds
 scripts/robustness_features.py   re-encode all windows under perturbations (MPS)
 scripts/build_kernel.py   pastes raptor_core.py into a single-file Kaggle script
