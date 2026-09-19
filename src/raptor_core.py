@@ -145,8 +145,12 @@ def _as_int(v) -> int:
         return 0
 
 
-def build_study(study_dir: str, series_rows: list[dict], geom: Geometry = NATIVE384_DENSE):
+def build_study(study_dir: str, series_rows: list[dict], geom: Geometry = NATIVE384_DENSE,
+                cache: dict | None = None):
     """One study -> (vol uint8 [D,img,img], mask uint8 [D], slot_info list).
+
+    `cache`, when given, memoises series ordering and decoded slices by path, so building the same study in
+    several geometries (an ensemble of checkpoints) reads each DICOM file once. Results are identical.
 
     Five slots are filled in a fixed order. A slot with no matching series stays all zeros and its
     mask entries are 0. Within a series, slices are spread evenly over [span_lo, span_hi] of the
@@ -162,7 +166,13 @@ def build_study(study_dir: str, series_rows: list[dict], geom: Geometry = NATIVE
         if r is None:
             slot_info.append(info); idx += k; continue
         used.add(r["SeriesInstanceUID"])
-        files, med_ps = order_series(f"{study_dir}/{r['SeriesInstanceUID']}")
+        sdir = f"{study_dir}/{r['SeriesInstanceUID']}"
+        if cache is None:
+            files, med_ps = order_series(sdir)
+        else:
+            if ("order", sdir) not in cache:
+                cache[("order", sdir)] = order_series(sdir)
+            files, med_ps = cache[("order", sdir)]
         info.update(series=r["SeriesInstanceUID"], n_files=len(files), pixel_spacing=med_ps,
                     fluid=_as_int(r.get("Fluid_Sensitive", 0)))
         if not files:
@@ -177,7 +187,11 @@ def build_study(study_dir: str, series_rows: list[dict], geom: Geometry = NATIVE
         def load(fp_ps):
             fp, ps = fp_ps
             try:
-                return read_pixels(fp), ps
+                if cache is None:
+                    return read_pixels(fp), ps
+                if ("px", fp) not in cache:
+                    cache[("px", fp)] = read_pixels(fp)
+                return cache[("px", fp)], ps
             except Exception:
                 return None, med_ps
 

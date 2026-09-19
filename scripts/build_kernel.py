@@ -47,6 +47,21 @@ JOBS = {
         "competition_sources": ["rsna-knee-abnormality-detection"],
         "main": "submit",
     },
+    "arms_gold": {
+        "id": "ibrahimdodo/raptor-knee-arms-gold",
+        "title": "Raptor Knee Arms Gold",
+        "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense", "dreaddevelopment/raptor-knee-maxspan",
+                            "dreaddevelopment/raptor-knee-native384"],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+    },
+    "submit_raptor4": {
+        "id": "ibrahimdodo/raptor-knee-submission-raptor4",
+        "title": "Raptor Knee Submission Raptor4",
+        "dataset_sources": ["dreaddevelopment/raptor-knee-native384dense", "dreaddevelopment/raptor-knee-maxspan",
+                            "dreaddevelopment/raptor-knee-native384"],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+        "main": "submit",
+    },
     "submit": {
         "id": "ibrahimdodo/raptor-knee-submission",
         "title": "Raptor Knee Submission",

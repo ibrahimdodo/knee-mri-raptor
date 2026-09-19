@@ -95,3 +95,17 @@ def test_norm_modes(norm):
     w = rc.make_windows(vol, [1], res=4, norm=norm)
     expected = (1 - rc.IMAGENET_MEAN) / rc.IMAGENET_STD if norm == "imagenet" else torch.ones(3, 1, 1)
     assert torch.allclose(w[0, :, 0, 0], expected.flatten())
+
+
+def test_build_study_cache_gives_identical_stacks(tmp_path):
+    write_series(tmp_path / "study" / "sagT2", 40, plane_normal=(1, 0, 0))
+    write_series(tmp_path / "study" / "corPD", 20, plane_normal=(0, 1, 0))
+    rows = [{"SeriesInstanceUID": "sagT2", "Anatomical_Plane": "Sagittal", "Fluid_Sensitive": 1},
+            {"SeriesInstanceUID": "corPD", "Anatomical_Plane": "Coronal", "Fluid_Sensitive": 0}]
+    cache = {}
+    for geom in (rc.Geometry(img=32), rc.Geometry(img=24, span_lo=0.06, span_hi=0.94)):
+        plain = rc.build_study(str(tmp_path / "study"), rows, geom)
+        cached = rc.build_study(str(tmp_path / "study"), rows, geom, cache=cache)
+        np.testing.assert_array_equal(plain[0], cached[0])
+        np.testing.assert_array_equal(plain[1], cached[1])
+    assert any(k[0] == "px" for k in cache) and any(k[0] == "order" for k in cache)
