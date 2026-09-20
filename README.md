@@ -149,6 +149,17 @@ ensemble's channel-flipped view. All three reproduce their stored AUCs to within
   gain survives; the rest was selection, since v5 and v8 were built from gold-selected epochs.
 - Same-family averaging explains about a third of the public stack's lead (+0.005 of 0.927 -> 0.941).
 
+### Phase 8: a different family, and why it did not help (done, [notebook](notebooks/08_dino_arm.ipynb))
+
+A frozen DINOv2-small encodes the same stacks (`kaggle/dino_feats`, two T4 shards, 50 min each, 768-d features); an
+attention head trains on them exactly as in Phase 6.
+
+- The arm is genuinely different: score correlation 0.65-0.68 with the CoAtNet, against 0.94-0.96 between CoAtNets.
+- It is also much weaker: 0.768 macro-AUC on gold against 0.917, because only the head was trained.
+- Every weight above zero makes the blend worse, on the 652 held-out training studies and on gold, so it is left out.
+- Ensembling needs members that are different **and** comparably good. The public stack's DINOv2 members are
+  fine-tuned on this data, which is what makes them both.
+
 ## How the model sees a study
 
 1. **Five fixed slots, 64 slices.** 18 sagittal (fluid-sensitive preferred), 14 sagittal (not fluid),
@@ -174,6 +185,7 @@ src/reports.py            report language detection
 src/head_training.py      attention head on frozen features: recipes, masked loss, training
 kaggle/train_feats/       Kaggle job: backbone features for all 4,407 training studies (two shards)
 kaggle/arms_gold/         Kaggle job: all three public CoAtNet checkpoints on the 58 gold studies
+kaggle/dino_feats/        Kaggle job: frozen DINOv2 features for all training studies (two shards)
 scripts/train_heads.py    phase 6 recipes x seeds
 scripts/robustness_features.py   re-encode all windows under perturbations (MPS)
 scripts/build_kernel.py   pastes raptor_core.py into a single-file Kaggle script

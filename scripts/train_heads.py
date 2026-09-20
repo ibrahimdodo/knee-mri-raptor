@@ -6,6 +6,7 @@ The gold studies are never used for training or selection.
 
 Writes outputs/local/heads/<recipe>_seed<k>.npz (gold logits, history) and outputs/local/heads/runs.csv.
 """
+import os
 import sys
 import time
 from pathlib import Path
@@ -19,27 +20,37 @@ sys.path.insert(0, str(ROOT / "src"))
 import head_training as ht
 import raptor_core as rc
 
-RECIPES = [
-    ht.Recipe("R1_author", pos_weight=True),
-    ht.Recipe("R2_no_posweight", pos_weight=False),
-    ht.Recipe("R3_mask_unsure", pos_weight=False, mask_unsure=True),
-    ht.Recipe("R4_mask_unsure_posweight", pos_weight=True, mask_unsure=True),
-    ht.Recipe("R5_hard", pos_weight=False, hard_targets=True),
-    ht.Recipe("R6_warm_mask_unsure", pos_weight=False, mask_unsure=True, warm_start=True, lr=3e-4),
-]
+# FEATURES=coatnet (Phase 6) retrains the head on the checkpoint's own frozen features and can warm-start from
+# its head. FEATURES=dino (Phase 8) trains the same head on frozen DINOv2 features, which have no head to inherit,
+# so only the recipe that Phase 6 settled on is run.
+FEATURES = os.environ.get("RAPTOR_FEATURES", "coatnet")
+RECIPES = {
+    "coatnet": [
+        ht.Recipe("R1_author", pos_weight=True),
+        ht.Recipe("R2_no_posweight", pos_weight=False),
+        ht.Recipe("R3_mask_unsure", pos_weight=False, mask_unsure=True),
+        ht.Recipe("R4_mask_unsure_posweight", pos_weight=True, mask_unsure=True),
+        ht.Recipe("R5_hard", pos_weight=False, hard_targets=True),
+        ht.Recipe("R6_warm_mask_unsure", pos_weight=False, mask_unsure=True, warm_start=True, lr=3e-4),
+    ],
+    "dino": [ht.Recipe("D_mask_unsure", pos_weight=False, mask_unsure=True, epochs=20)],
+}[FEATURES]
 SEEDS = [0, 1, 2]
+SHARDS = {"coatnet": ("outputs/kaggle/train_feats", "feats_shard{}.npy", "ids_shard{}.npy"),
+          "dino": ("outputs/kaggle/dino_feats", "dino_feats_shard{}.npy", "dino_ids_shard{}.npy")}[FEATURES]
 
 
 def load_features():
+    folder, feat_name, id_name = SHARDS
     feats, ids = [], []
     for k in (0, 1):
-        feats.append(np.load(ROOT / f"outputs/kaggle/train_feats/feats_shard{k}.npy"))
-        ids.append(np.load(ROOT / f"outputs/kaggle/train_feats/ids_shard{k}.npy"))
+        feats.append(np.load(ROOT / folder / feat_name.format(k)))
+        ids.append(np.load(ROOT / folder / id_name.format(k)))
     return np.concatenate(feats), np.concatenate(ids).astype(str)
 
 
 def main():
-    out = ROOT / "outputs/local/heads"
+    out = ROOT / ("outputs/local/heads" if FEATURES == "coatnet" else f"outputs/local/heads_{FEATURES}")
     out.mkdir(parents=True, exist_ok=True)
     feats, ids = load_features()
     row = {s: i for i, s in enumerate(ids)}
@@ -63,14 +74,17 @@ def main():
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     checkpoint, _ = rc.load_checkpoint(str(ROOT / "models/raptor_ft_coatnet_v10_full.pt"), "cpu")
     np.save(out / "gold_labels.npy", Yg)
-    np.save(out / "checkpoint_gold_logits.npy", ht.predict(ht.AttentionHead.from_checkpoint(checkpoint).eval(), Xg))
+    if FEATURES == "coatnet":
+        np.save(out / "checkpoint_gold_logits.npy", ht.predict(ht.AttentionHead.from_checkpoint(checkpoint).eval(), Xg))
+    print(f"features: {FEATURES}, {X.shape[-1]}-d", flush=True)
 
     runs = []
     for recipe in RECIPES:
         for seed in SEEDS:
             recipe.seed = seed
             t0 = time.time()
-            head, hist = ht.train_head(X, S, train_idx, val_idx, recipe, checkpoint_model=checkpoint,
+            head, hist = ht.train_head(X, S, train_idx, val_idx, recipe,
+                                       checkpoint_model=checkpoint if FEATURES == "coatnet" else None,
                                        device=device, log=lambda *a: None)
             head = head.cpu()
             gold_logits = ht.predict(head, Xg)

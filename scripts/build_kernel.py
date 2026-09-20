@@ -54,6 +54,21 @@ JOBS = {
                             "dreaddevelopment/raptor-knee-native384"],
         "competition_sources": ["rsna-knee-abnormality-detection"],
     },
+    "dino_feats": {
+        "id": "ibrahimdodo/raptor-knee-dino-features",
+        "title": "Raptor Knee DINO Features",
+        "dataset_sources": [],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+        "model_sources": ["metaresearch/dinov2/pyTorch/small/1"],
+    },
+    "dino_feats_b": {
+        "id": "ibrahimdodo/raptor-knee-dino-features-b",
+        "title": "Raptor Knee DINO Features B",
+        "dataset_sources": [],
+        "competition_sources": ["rsna-knee-abnormality-detection"],
+        "model_sources": ["metaresearch/dinov2/pyTorch/small/1"],
+        "main": "dino_feats",
+    },
     "submit_raptor4": {
         "id": "ibrahimdodo/raptor-knee-submission-raptor4",
         "title": "Raptor Knee Submission Raptor4",
@@ -96,7 +111,7 @@ def build(job: str, overrides: dict | None = None) -> Path:
         "enable_gpu": spec.get("gpu", True), "enable_tpu": False, "enable_internet": False,
         **({"machine_shape": "NvidiaTeslaT4"} if spec.get("gpu", True) else {}),
         "dataset_sources": spec["dataset_sources"], "competition_sources": spec["competition_sources"],
-        "kernel_sources": [], "model_sources": [],
+        "kernel_sources": [], "model_sources": spec.get("model_sources", []),
     }
     (out / "kernel-metadata.json").write_text(json.dumps(meta, indent=2))
     return out / code_file
