@@ -10,6 +10,9 @@ The goal is not to beat it but to find out whether that number holds up and why 
 which slices it relies on for each finding, where it fails, and how much of the reported score
 survives once its own model selection on those same 58 studies is accounted for.
 
+Picking this up later: [RESUME.md](RESUME.md) records what lives only on this machine, the Kaggle assets, and the
+one open thread.
+
 ## Plan
 
 | Phase | Question | Where it runs |
